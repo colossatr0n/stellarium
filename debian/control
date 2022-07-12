@@ -18,7 +18,6 @@ Build-Depends: cmake,
                qttools5-dev (>= 5.9),
                qttools5-dev-tools (>= 5.9),
                libqt5charts5-dev (>= 5.9),
-               libqt5charts5-dev (>= 5.9),
                qtwebengine5-dev (>= 5.9) [i386 amd64],
                zlib1g-dev
 Standards-Version: 4.5.0
@@ -42,12 +41,12 @@ Description: real-time photo-realistic sky generator
   - all New General Catalogue (NGC) objects,
   - images of almost all Messier objects and the Milky Way,
   - real time positions of the planets and their satellites,
-  - 13 different cultures with their constellations,
+  - 46 different cultures with their constellations,
   - artistic illustrations of the 88 Western constellations,
   - very realistic atmosphere, sunrise and sunset,
   - 7 panoramic landscapes (more can be made or downloaded from the website),
   - scripting with ECMAScript,
-  - plug-in support: Stellarium comes with 8 plug-ins by default, including:
+  - plug-in support: Stellarium comes with 22 plug-ins by default, including:
   - artificial satellites plug-in (updated from an on-line TLE database),
   - ocular simulation plug-in (shows how objects look like in a given ocular),
   - Solar System editor plug-in (imports comet and asteroid data from the MPC),
