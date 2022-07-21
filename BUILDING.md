@@ -296,6 +296,23 @@ $ cmake ../..
 $ make -jN
 ```
 
+#### LSP
+If using clangd or sourcekit-lsp (clangd is recommended for compatibility reasons) for a C/C++ LSP and `#include` 
+statements are being flagged as missing, make sure to add `-DCMAKE_EXPORT_COMPILE_COMMANDS=1` as a `cmake` argument 
+and symlink the generated `compile_commands.json` to the project's root directory:
+
+```
+ln -s ~/path/to/stellarium/build/macosx/compile_commands.json ~/path/to/stellarium/
+```
+If there are header errors in `.hpp` header files, use [compdb](https://github.com/Sarcasm/compdb) to append header file information to `compile_commands.json`.
+
+```
+make
+compdb -p ./ list > compile_commands_with_headers.json 2>/dev/null
+rm compile_commands.json 
+mv compile_commands_with_headers.json compile_commands.json
+```
+
 ### On Windows
 ```
 $ md build
@@ -375,12 +392,19 @@ Notes:
 
 After compilation, you may run the program when you are in the right directory. 
 
-### Linux
+### Linux & Mac
 Assuming the stellarium sources are in DEV/stellarium and build in DEV/stellarium/build/unix
 ```
 cd DEV/stellarium
 ./build/unix/src/stellarium
 ```
+
+If the application builds but only displays a black screen, run cmake again with the following arguments:
+
+```
+cmake ../.. -DUSE_PLUGIN_ONLINEQUERIES=0
+```
+Then run `make` and follow the steps above to re-run stellarium.
 
 ### Windows
 

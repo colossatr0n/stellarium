@@ -22,6 +22,7 @@
 #include <QFont>
 #include <QString>
 #include <QPair>
+#include <vector>
 #include "VecMath.hpp"
 #include "SolarSystem.hpp"
 #include "Planet.hpp"
@@ -54,10 +55,41 @@ the configuration window; if using flags, implement them properly w Qt.
 class Observability : public StelModule
 {
 	Q_OBJECT
-	Q_PROPERTY(bool flagShowReport
+	Q_PROPERTY(
+           bool reportEnabled
 		   READ isShownReport
 		   WRITE showReport
 		   NOTIFY flagReportVisibilityChanged
+		   )
+	Q_PROPERTY(
+           bool show_Today
+		   READ isTodayEventsSettingEnabled
+		   WRITE setTodayEventsSetting
+		   NOTIFY todayEventsSettingChanged
+		   )
+	Q_PROPERTY(
+           bool show_AcroCos;
+		   READ isAcroCosSettingEnabled
+		   WRITE setAcroCosSetting
+		   NOTIFY acroCosSettingChanged
+		   )
+	Q_PROPERTY(
+           bool show_Good_Nights
+		   READ isGoodNightsSettingEnabled
+		   WRITE setGoodNightsSetting
+		   NOTIFY goodNightsSettingChanged
+		   )
+	Q_PROPERTY(
+           bool show_Best_Night
+		   READ isBestNightSettingEnabled
+		   WRITE setBestNightSetting
+		   NOTIFY bestNightSettingChanged
+		   )
+	Q_PROPERTY(
+           bool show_FullMoon
+		   READ isFullMoonSettingEnabled
+		   WRITE setFullMoonSetting
+		   NOTIFY fullMoonSettingChanged
 		   )
 public:
 	Observability();
@@ -91,10 +123,19 @@ public:
 	//! Get the user-defined altitude of the visual horizon.
 	int getHorizonAltitude();
 
-	bool isShownReport() const {return flagShowReport;}
+	bool isShownReport() const {return reportEnabled;}
 
 signals:
 	void flagReportVisibilityChanged(bool b);
+	void todayEventsSettingChanged(bool b);
+	void acroCosSettingChanged(bool b);
+	void goodNightsSettingChanged(bool b);
+	void oppositionSettingChanged(bool b);
+	void fullMoonSettingChanged(bool b);
+	void refractionSettingChanged(bool b);
+	void horizonAltitudeChanged();
+	void twilightAltitudeChanged();
+	void settingsChanged();
 
 public slots:
 	//! Restore and reload the default plug-in settings.
@@ -106,19 +147,28 @@ public slots:
 	//! @{
 	
 	//! Display today's events (rise, set and transit times).
-	void enableTodayField(bool enabled = true);
+	void setTodayEventsSetting(bool enabled = true);
 	//! Display acronychal and cosmical rising/setting.
-	void enableAcroCosField(bool enabled = true);
+	void setAcroCosSetting(bool enabled = true);
 	//! Display nights when the object is above the horizon after darkness.
-	void enableGoodNightsField(bool enabled = true);
+	void setGoodNightsSetting(bool enabled = true);
 	//! Display when selected object is in opposition.
-	void enableOppositionField(bool enabled = true);
+	void setOppositionSetting(bool enabled = true);
 	//! Display date of the full moon.
 	//! Has any effect only if the Moon is selected.
-	void enableFullMoonField(bool enabled = true);
+	void setFullMoonSetting(bool enabled = true);
 	//! @}
-	
-	
+
+    // TODO(colossatr0n) make backing fields private? Maybe don't use getters here.
+	bool isTodayEventsSettingEnabled() const { return show_Today; };
+	bool isAcroCosSettingEnabled() const { return show_AcroCos; };
+	bool isGoodNightsSettingEnabled() const { return show_Good_Nights; };
+	bool isOppositionSettingEnabled() const { return  show_Best_Night; };
+	bool isFullMoonSettingEnabled() const { return show_FullMoon; };
+    void updateSystemData(StelCore *core);
+    bool shouldShowYear();
+    void getObjectObservability();
+
 	//! Set the color of the font used to display the report.
 	//! Applies only to what is drawn on the viewport.
 	//! @param color Color vector in Stellarium's RGB format.
@@ -156,6 +206,24 @@ private:
 
 	void setDateFormat(bool b) { dmyFormat=b; }
 	bool getDateFormat(void) { return dmyFormat; }
+
+    // TODO add docstring
+    QString getDateRangeMessage(const QString &dateRanges);
+    /* QString getDateRange(QString dateRange); */
+    void saveOutput(QString output, QString filename);
+    QString getDateRanges();
+    void printResults(StelCore *core, StelObjectP &selectedObject);
+    QString getHeliMessage();
+    QString getAcronychalCosmicalMessage();
+    QString getBestDateMessage();
+    void fixObjectLocation();
+    void computeYearlyEphemeris(StelObjectP &selectedObject, StelCore *core, bool locChanged, bool yearChanged);
+    void handleObjectSelection(StelObjectP &selectedObject);
+
+    bool isMoon(StelObjectP &object); 
+    bool isSun(StelObjectP &object); 
+    bool isInterstellarStar(StelObjectP &object); 
+    bool isSystemPlanet(StelObjectP &object);
 
 	//! Computes the Hour Angle (culmination=0h) in absolute value (from 0h to 12h).
 	//! @todo The hour angle of what, exactly? --BM
@@ -270,7 +338,7 @@ private:
 	void updateSunData(StelCore* core);
 
 	//! Computes the Sun's Sid. Times at astronomical twilight (for each year's day)
-	void updateSunH();
+	void updateSunSiderealTimes();
 
 	//! Convert an equatorial position vector to RA/Dec.
 	void toRADec(Vec3d vec3d, double& ra, double& dec);
@@ -308,8 +376,22 @@ private:
 	//! RA, Dec, observer latitude, object's elevation, and Hour Angle at horizon.
 	double selRA, selDec, mylat, mylon, alti, horizH, culmAlt;
 
-	//! Some place to keep JD and JDE. .first is JD(UT), .second is for the fitting JDE.
-	QPair<double, double> myJD;
+    struct Frame 
+    {
+        //! Some place to keep JD(UT) and JDE.
+        double julianDate;
+        double julianDateE;
+        double latitude;
+        double longitude;
+        double height;
+        int month;
+        int day;
+        int year;
+        bool hasObjectSelection;
+    };
+
+    Frame frame;
+    Frame getFrame();
 
 	//! Vectors to store Sun's RA, Dec, and Sid. Time at twilight and rise/set.
 	double sunRA[366];
@@ -368,12 +450,12 @@ private:
 	Vec3d EquPos, LocPos;
 
 	//! Some booleans to check the kind of source selected and the kind of output to produce.
-	bool isStar, isMoon, isSun, isScreen;
+	bool isScreen;
 
 	//! This really shouldn't be handled like this...
 	bool hasRisen;
 	bool configChanged;
-	bool souChanged;
+	bool stelObjChanged;
 	//! The last object type for which calculateSolarSystemEvents() was called.
 	int lastType;
 	
@@ -387,7 +469,7 @@ private:
 	//! Parameters for the graphics.
 	QFont font;
 	Vec3f fontColor;
-	bool flagShowReport;
+	bool reportEnabled;
 	int fontSize;
 	StelButton* button;
 	//! @}
