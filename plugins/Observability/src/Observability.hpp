@@ -18,6 +18,7 @@
 #ifndef OBSERVABILITY_HPP
 #define OBSERVABILITY_HPP
 
+#include "StelLocation.hpp"
 #include "StelModule.hpp"
 #include <QFont>
 #include <QString>
@@ -68,7 +69,7 @@ class Observability : public StelModule
 		   NOTIFY todayEventsSettingChanged
 		   )
 	Q_PROPERTY(
-           bool show_AcroCos;
+           bool show_AcroCos
 		   READ isAcroCosSettingEnabled
 		   WRITE setAcroCosSetting
 		   NOTIFY acroCosSettingChanged
@@ -81,9 +82,9 @@ class Observability : public StelModule
 		   )
 	Q_PROPERTY(
            bool show_Best_Night
-		   READ isBestNightSettingEnabled
-		   WRITE setBestNightSetting
-		   NOTIFY bestNightSettingChanged
+		   READ isOppositionSettingEnabled
+		   WRITE setOppositionSetting
+		   NOTIFY oppositionSettingChanged
 		   )
 	Q_PROPERTY(
            bool show_FullMoon
@@ -123,7 +124,7 @@ public:
 	//! Get the user-defined altitude of the visual horizon.
 	int getHorizonAltitude();
 
-	bool isShownReport() const {return reportEnabled;}
+	bool isShownReport() const { return reportEnabled; }; 
 
 signals:
 	void flagReportVisibilityChanged(bool b);
@@ -165,9 +166,9 @@ public slots:
 	bool isGoodNightsSettingEnabled() const { return show_Good_Nights; };
 	bool isOppositionSettingEnabled() const { return  show_Best_Night; };
 	bool isFullMoonSettingEnabled() const { return show_FullMoon; };
-    void updateSystemData(StelCore *core);
+    void updateSystemData();
     bool shouldShowYear();
-    void getObjectObservability();
+    void getObjectObservability(const StelLocation &location);
 
 	//! Set the color of the font used to display the report.
 	//! Applies only to what is drawn on the viewport.
@@ -193,6 +194,7 @@ public slots:
 	
 	//! Controls whether an observability report will be displayed.
 	void showReport(bool b);
+    void togglePlugin();
 
 	
 private slots:
@@ -211,19 +213,23 @@ private:
     QString getDateRangeMessage(const QString &dateRanges);
     /* QString getDateRange(QString dateRange); */
     void saveOutput(QString output, QString filename);
-    QString getDateRanges();
-    void printResults(StelCore *core, StelObjectP &selectedObject);
+    QString getDateRanges(const StelLocation &location);
+    void printResults(StelCore *core, QList<StelObjectP> &selectedObjects);
     QString getHeliMessage();
     QString getAcronychalCosmicalMessage();
     QString getBestDateMessage();
     void fixObjectLocation();
-    void computeYearlyEphemeris(StelObjectP &selectedObject, StelCore *core, bool locChanged, bool yearChanged);
-    void handleObjectSelection(StelObjectP &selectedObject);
+    void computeYearlyEphemeris(QList<StelObjectP> &selectedObjects);
+    void handleObjectSelection(QList<StelObjectP> &selectedObjects);
 
-    bool isMoon(StelObjectP &object); 
-    bool isSun(StelObjectP &object); 
-    bool isInterstellarStar(StelObjectP &object); 
-    bool isSystemPlanet(StelObjectP &object);
+    bool isMoon(QList<StelObjectP> &object); 
+    bool isSun(QList<StelObjectP> &object); 
+    bool isInterstellarStar(QList<StelObjectP> &object); 
+    bool isSystemPlanet(QList<StelObjectP> &object);
+    void setEnablePlugin(bool b);
+    void createConnections();
+    void closeConnections(); 
+    void recomputeEmphemeris(StelCore *core, QList<StelObjectP> selectedObjects);
 
 	//! Computes the Hour Angle (culmination=0h) in absolute value (from 0h to 12h).
 	//! @todo The hour angle of what, exactly? --BM
@@ -241,7 +247,7 @@ private:
 	//! This function updates the variables MoonRise, MoonSet, MoonCulm.
 	//! Returns success status.
 	//! @param[in] bodyType is 1 for Sun, 2 for Moon, 3 for Solar System object.
-	bool calculateSolarSystemEvents(StelCore* core, int bodyType);
+	bool calculateSolarSystemEvents(StelCore* core, QList<StelObjectP> &selectedObject);
 
 	//! Finds the acronycal and cosmical rise/set dates of the year for the currently-selected object.
 	//! @param[out] acroRise day of year of the Acronycal rise.
@@ -338,7 +344,7 @@ private:
 	void updateSunData(StelCore* core);
 
 	//! Computes the Sun's Sid. Times at astronomical twilight (for each year's day)
-	void updateSunSiderealTimes();
+	void updateSunSiderealTimes(StelCore* core);
 
 	//! Convert an equatorial position vector to RA/Dec.
 	void toRADec(Vec3d vec3d, double& ra, double& dec);
@@ -373,25 +379,10 @@ private:
 	//! User-defined angular altitude of the visual horizon in degrees.
 	int horizonAltDeg;
 
-	//! RA, Dec, observer latitude, object's elevation, and Hour Angle at horizon.
-	double selRA, selDec, mylat, mylon, alti, horizH, culmAlt;
+	//! RA, Dec, object's elevation, and Hour Angle at horizon.
+	double selRA, selDec, alti, horizH, culmAlt;
 
-    struct Frame 
-    {
-        //! Some place to keep JD(UT) and JDE.
-        double julianDate;
-        double julianDateE;
-        double latitude;
-        double longitude;
-        double height;
-        int month;
-        int day;
-        int year;
-        bool hasObjectSelection;
-    };
-
-    Frame frame;
-    Frame getFrame();
+    QPair<double, double> myJD;
 
 	//! Vectors to store Sun's RA, Dec, and Sid. Time at twilight and rise/set.
 	double sunRA[366];
