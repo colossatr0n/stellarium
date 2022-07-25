@@ -119,8 +119,6 @@ Observability::Observability()
    , dmyFormat(false)
    , isScreen(true)
    , hasRisen(false)
-   , configChanged(false)
-   , stelObjChanged(false)
    , show_AcroCos(false)
    , show_Good_Nights(false)
    , show_Best_Night(false)
@@ -208,11 +206,6 @@ double Observability::getCallOrder(StelModuleActionName actionName) const
 void Observability::init()
 {
    addAction("actionShow_Observability", N_("Observability"), N_("Toggle Observability"), this, "reportEnabled");
-
-   /* StelActionMgr* actionMgr = StelApp::getInstance().getStelActionManager(); */
-   /* StelAction* action = actionMgr->findAction("actionShow_Observability"); */
-   /* connect(action, &StelAction::toggled, this, &Observability::showReport); */
-
    addAction("actionShow_Observability_dialog",
              N_("Observability"),
              N_("Show settings dialog"),
@@ -247,33 +240,33 @@ void Observability::init()
                 closeConnections();
            }
     });
-	/* setEnablePlugin(false); */
 }
 
 /////////////////////////////////////////////
 // MAIN CODE:
 void Observability::draw(StelCore * core)
 {
-   if (!reportEnabled)
-      return; // Button is off.
+    if (!reportEnabled) {
+        return;
+    }
 
-   // Only execute plugin if we are on Earth.
    StelLocation location = core->getCurrentLocation();
-   
-   if (location.planetName != "Earth")
-      return;
-
-   // PRELIMINARS:
    StelObjectMgr &objectMgr = StelApp::getInstance().getStelObjectMgr();
    QList<StelObjectP> selectedObjects = objectMgr.getSelectedObject();
-   PlanetP     ssObject, parentPlanet;
 
+    if (!shouldDraw(location, objectMgr)) {
+        return;
+    }
+    //
+
+   // PRELIMINARS:
+   PlanetP     ssObject, parentPlanet;
    double currJD     = core->getJD();
    double      currJDint;
    int    month, day, year;
    StelUtils::getDateFromJulianDay(currJD, &year, &month, &day);
 
-   GMTShift          = core->getUTCOffset(currJD) / 24.0;
+   GMTShift = core->getUTCOffset(currJD) / 24.0;
 
    double currLocalT = 24. * modf(currJD + GMTShift, &currJDint);
 
@@ -299,7 +292,6 @@ void Observability::draw(StelCore * core)
    if (qAbs(refractedHorizonAlt - RefracAlt) > 2.91e-4) {
       //... configuration for refraction changed notably.
       refractedHorizonAlt = RefracAlt;
-      stelObjChanged       = true;
    }
 
    //////////////////////////////////////////////////////////////////
@@ -1189,11 +1181,13 @@ void Observability::saveConfiguration()
 
 void Observability::setTodayEventsSetting(bool enabled)
 {
-   // show_Today = enabled;
    Q_UNUSED(enabled)
    show_Today    = false; // DISABLED for 0.21.2
-   configChanged = true;
-   // TODO(colossatr0n) make this like the others.
+    /* if (enabled != show_Today) */
+    /* { */
+    /*     show_Today = enabled; */
+    /*     emit todayEventsSettingChanged(enabled); */
+    /* } */
 }
 
 void Observability::setAcroCosSetting(bool enabled)
@@ -1307,16 +1301,6 @@ void Observability::showReport(bool b)
       qDebug() << "[Observability] Show report value changed to" << reportEnabled;
       emit flagReportVisibilityChanged(b);
    }
-}
-
-// TODO(colossatr0n) remove this.
-void Observability::setEnablePlugin(bool b)
-{
-	// we should never change the 'm_enablePlugin' member directly!
-	// as it's a button on the toolbar, it must be sync with its StelAction
-	StelActionMgr* actionMgr = StelApp::getInstance().getStelActionManager();
-	StelAction* action = actionMgr->findAction("actionShow_Observability");
-	action->setChecked(b);
 }
 
 void Observability::saveOutput(QString output, QString filename)
@@ -1973,6 +1957,17 @@ void Observability::recomputeEmphemeris(QList<StelObjectP> &selectedObjects)
         culmAlt  = qAbs(location.latitude - dec); // 90 - altitude at transit.
     }
     lastJDMoon = julianDate;
+}
 
+bool Observability::shouldDraw(StelLocation &location, StelObjectMgr &objectMgr) {
+   // Only execute plugin if we are on Earth.
+   if (location.planetName != "Earth")
+      return false;
 
+   if (objectMgr.getWasSelected()) {
+        if (objectMgr.getSelectedObject()[0]->getType() == "Satellite") {
+            return false;
+        }
+   }
+   return true;
 }

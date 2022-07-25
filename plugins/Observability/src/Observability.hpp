@@ -28,6 +28,7 @@
 #include "SolarSystem.hpp"
 #include "Planet.hpp"
 #include "StelFader.hpp"
+#include "StelObjectMgr.hpp"
 
 class QPixmap;
 class StelButton;
@@ -169,6 +170,7 @@ public slots:
     void updateSystemData();
     bool shouldShowYear();
     void getObjectObservability(const StelLocation &location);
+    bool shouldDraw(StelLocation &location, StelObjectMgr &objectMgr); 
 
 	//! Set the color of the font used to display the report.
 	//! Applies only to what is drawn on the viewport.
@@ -445,8 +447,6 @@ private:
 
 	//! This really shouldn't be handled like this...
 	bool hasRisen;
-	bool configChanged;
-	bool stelObjChanged;
 	
 	//! @name Flags controlling report contents.
 	//! @{
