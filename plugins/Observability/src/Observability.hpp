@@ -224,12 +224,12 @@ private:
 
     bool isMoon(QList<StelObjectP> &object); 
     bool isSun(QList<StelObjectP> &object); 
-    bool isInterstellarStar(QList<StelObjectP> &object); 
+    bool isInterstellar(QList<StelObjectP> &object); 
     bool isSystemPlanet(QList<StelObjectP> &object);
     void setEnablePlugin(bool b);
     void createConnections();
     void closeConnections(); 
-    void recomputeEmphemeris(StelCore *core, QList<StelObjectP> selectedObjects);
+    void recomputeEmphemeris(QList<StelObjectP> &selectedObjects);
 
 	//! Computes the Hour Angle (culmination=0h) in absolute value (from 0h to 12h).
 	//! @todo The hour angle of what, exactly? --BM
@@ -247,7 +247,7 @@ private:
 	//! This function updates the variables MoonRise, MoonSet, MoonCulm.
 	//! Returns success status.
 	//! @param[in] bodyType is 1 for Sun, 2 for Moon, 3 for Solar System object.
-	bool calculateSolarSystemEvents(StelCore* core, QList<StelObjectP> &selectedObject);
+	bool calculateSolarSystemEvents(StelCore* core, QList<StelObjectP> &selectedObjects);
 
 	//! Finds the acronycal and cosmical rise/set dates of the year for the currently-selected object.
 	//! @param[out] acroRise day of year of the Acronycal rise.
@@ -447,8 +447,6 @@ private:
 	bool hasRisen;
 	bool configChanged;
 	bool stelObjChanged;
-	//! The last object type for which calculateSolarSystemEvents() was called.
-	int lastType;
 	
 	//! @name Flags controlling report contents.
 	//! @{

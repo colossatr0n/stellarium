@@ -23,6 +23,7 @@
 #include <QSettings>
 #include <QString>
 #include <QTimer>
+#include <stdexcept>
 
 #include "Observability.hpp"
 #include "ObservabilityDialog.hpp"
@@ -120,7 +121,6 @@ Observability::Observability()
    , hasRisen(false)
    , configChanged(false)
    , stelObjChanged(false)
-   , lastType(0)
    , show_AcroCos(false)
    , show_Good_Nights(false)
    , show_Best_Night(false)
@@ -319,13 +319,11 @@ void Observability::draw(StelCore * core)
    if (objectMgr.getWasSelected()) {
         if (isTodayEventsSettingEnabled()) {
             // Today's ephemeris (rise, set, and transit times)
-            if (!isInterstellarStar(selectedObjects)) {
-                int type = (isSun(selectedObjects)) ? 1 : 0;
-                type += (isMoon(selectedObjects)) ? 2 : 0;
-                type += (!isSun(selectedObjects) && !isMoon(selectedObjects)) ? 3 : 0;
+            if (!isInterstellar(selectedObjects)) {
+                // Sun, moon, or planet
 
                 // Returns false if the calculation fails...
-                solvedMoon = calculateSolarSystemEvents(core, type);
+                solvedMoon = calculateSolarSystemEvents(core, selectedObjects);
                 currH      = qAbs(24. * (MoonCulm - julianDate) / TFrac);
                 transit    = MoonCulm - julianDate < 0.0;
                 if (solvedMoon) { // If failed, Set and Rise will be dummy.
@@ -409,7 +407,7 @@ void Observability::draw(StelCore * core)
 
             // 	Culmination:
 
-            if (isInterstellarStar(selectedObjects)) {
+            if (isInterstellar(selectedObjects)) {
                 culmAlt = qAbs(location.latitude - selDec); // 90.-altitude at transit.
                 transit = LocPos[1] < 0.0;
             }
@@ -467,7 +465,7 @@ void Observability::draw(StelCore * core)
          lineObservableRange.clear();
          lineAcroCos.clear();
          lineHeli.clear();
-         calculateSolarSystemEvents(core, 2);
+         calculateSolarSystemEvents(core, selectedObjects);
       }
    } else {
        // other ephemeris computations performed by signals and slots.
@@ -927,8 +925,14 @@ void Observability::getPlanetCoords(StelCore * core, QPair<double, double> JD, d
 
 //////////////////////////////////////////////
 // Solves Moon's, Sun's, or Planet's ephemeris by bissection.
-bool Observability::calculateSolarSystemEvents(StelCore * core, int bodyType)
+bool Observability::calculateSolarSystemEvents(StelCore * core, QList<StelObjectP> &selectedObjects)
 {
+   if (isInterstellar(selectedObjects)) {
+       QString msg = QString("[Observability] StelObject must be in the solar system");
+       qDebug() << msg;
+       throw std::invalid_argument(msg.toStdString());
+   }
+
    const int             NUM_ITER = 100;
    int                   i;
    double                hHoriz, ra, dec, raSun = 0.0, decSun = 0.0, tempH, /* tempJd, */ tempEphH, curSidT, eclLon;
@@ -944,12 +948,12 @@ bool Observability::calculateSolarSystemEvents(StelCore * core, int bodyType)
 
    // Only recompute ephemeris from second to second (at least)
    // or if the source has changed (i.e., Sun <-> Moon). This saves resources:
-   if (qAbs(julianDate - lastJDMoon) > StelCore::JD_SECOND || lastType != bodyType || stelObjChanged) {
-       recomputeEmphemeris(core, bodyType);
+   if (qAbs(julianDate - lastJDMoon) > StelCore::JD_SECOND) {
+       recomputeEmphemeris(selectedObjects);
    } // Comes from if (qAbs(julianDate-lastJDMoon)>JDsec || LastObject!=Kind)
 
    // Find out the days of Full Moon:
-   if (bodyType == 2 && show_FullMoon) // || show_SuperMoon))
+   if (isMoon(selectedObjects) && show_FullMoon) // || show_SuperMoon))
    {
       // Only estimate date of Full Moon if we have changed Lunar month:
       if (julianDate > nextFullMoon || julianDate < prevFullMoon) {
@@ -1085,14 +1089,14 @@ bool Observability::calculateSolarSystemEvents(StelCore * core, int bodyType)
          //			ObsRange = q_("Greatest Full Moon: %1 "+months[fullMonth-1]+" (%2% of Moon at
          //Perilune)").arg(fullDay).arg(MoonSize,0,'f',2);
       }
-   } else if (bodyType < 3) {
+   } else if (!isSun(selectedObjects) && !isMoon(selectedObjects)) {
       lineBestNight.clear();
       lineObservableRange.clear();
       lineAcroCos.clear();
    }
 
    // Return the Moon and Earth to its current position:
-   if (bodyType < 3) {
+   if (!isSun(selectedObjects) && !isMoon(selectedObjects)) {
       getSunMoonCoords(core, myJD, raSun, decSun, ra, dec, eclLon, true);
    } else {
       getPlanetCoords(core, myJD, ra, dec, true);
@@ -1531,7 +1535,7 @@ void Observability::computeYearlyEphemeris(QList<StelObjectP> & selectedObjects)
 
     StelCore *core = StelApp::getInstance().getCore();
     if (shouldShowYear() && !isSun(selectedObjects) && !isMoon(selectedObjects)) {
-        if (!isInterstellarStar(selectedObjects)) { // Object moves.
+        if (!isInterstellar(selectedObjects)) { // Object moves.
                 updatePlanetData(core);               // Re-compute ephemeris.
         } else {
                 fixObjectLocation(); // Object is fixed on the sky.
@@ -1550,12 +1554,12 @@ bool Observability::isSun(QList<StelObjectP> & objects)
    return !objects.empty() && "Sun" == objects[0]->getEnglishName();
 }
 
-bool Observability::isInterstellarStar(QList<StelObjectP> & objects)
+bool Observability::isInterstellar(QList<StelObjectP> & objects)
 {
    if (objects.empty()) {
        return true; // no object selected, so the selection is the screen/space. 
    }
-   // This works because the Planet class only exists for in system objects.
+   // This works because the Planet class only exists for in system objects (including moon and sun).
    Planet * planet = dynamic_cast<Planet *>(objects[0].data());
    return planet == Q_NULLPTR;
 }
@@ -1609,7 +1613,7 @@ void Observability::handleObjectSelection(QList<StelObjectP> &selectedObjects)
 
         selName = name;
         // Check if the (new) source belongs to the Solar System:
-        if (!isInterstellarStar(selectedObjects) && !isMoon(selectedObjects) &&
+        if (!isInterstellar(selectedObjects) && !isMoon(selectedObjects) &&
             !isSun(selectedObjects)) // Object in the Solar System, but is not Sun nor Moon.
         {
             int gene     = -1;
@@ -1746,6 +1750,7 @@ void Observability::createConnections() {
                     // Handles newly selected object
                     QList<StelObjectP> selectedObjects = objectMgr.getSelectedObject();
                     handleObjectSelection(selectedObjects); 
+                    recomputeEmphemeris(selectedObjects);
                     computeYearlyEphemeris(selectedObjects);
                 });
 
@@ -1789,14 +1794,20 @@ void Observability::closeConnections() {
     disconnect(&StelApp::getInstance().getStelObjectMgr(), &StelObjectMgr::selectedObjectChanged, this, nullptr);
 }
 
-void Observability::recomputeEmphemeris(StelCore *core, int bodyType)
+// Only works for solar system objects.
+void Observability::recomputeEmphemeris(QList<StelObjectP> &selectedObjects)
 {
+   if (isInterstellar(selectedObjects)) {
+       return;
+   }
+
     const int             NUM_ITER = 100;
     int                   i;
     double                hHoriz, ra, dec, raSun = 0.0, decSun = 0.0, tempH, /* tempJd, */ tempEphH, curSidT, eclLon;
     QPair<double, double> tempJd;
     // Vec3d Observer;
 
+    StelCore *core = StelApp::getInstance().getCore();
     const double julianDate = core->getJD();
     const double julianDateE = core->computeDeltaT(julianDate) / 86400.;
 
@@ -1804,16 +1815,14 @@ void Observability::recomputeEmphemeris(StelCore *core, int bodyType)
     hHoriz      = calculateHourAngle(location.latitude, refractedHorizonAlt, selDec);
     bool raises = hHoriz > 0.0;
 
-    lastType = bodyType;
-
     myEarth->computePosition(julianDateE, Vec3d(0.));
     myEarth->computeTransMatrix(julianDate, julianDateE);
     Vec3d earthPos = myEarth->getHeliocentricEclipticPos();
 
-    if (bodyType == 1) // Sun position
+    if (isSun(selectedObjects)) // Sun position
     {
         Pos2 = core->j2000ToEquinoxEqu((StelCore::matVsop87ToJ2000) * (-earthPos), StelCore::RefractionOff);
-    } else if (bodyType == 2) // Moon position
+    } else if (isMoon(selectedObjects)) // Moon position
     {
         curSidT     = myEarth->getSiderealTime(julianDate, julianDateE) / Rad2Deg;
         RotObserver = (Mat4d::zrotation(curSidT)) * ObserverLoc;
@@ -1859,13 +1868,13 @@ void Observability::recomputeEmphemeris(StelCore *core, int bodyType)
         tempJd.first  = MoonRise;
         tempJd.second = tempJd.first + core->computeDeltaT(tempJd.first) / 86400.0;
 
-        if (bodyType < 3) {
+        if (!isSun(selectedObjects) && !isMoon(selectedObjects)) {
             getSunMoonCoords(core, tempJd, raSun, decSun, ra, dec, eclLon, false);
         } else {
             getPlanetCoords(core, tempJd, ra, dec, false);
         }
 
-        if (bodyType == 1) {
+        if (isSun(selectedObjects)) {
             ra  = raSun;
             dec = decSun;
         }
@@ -1896,12 +1905,12 @@ void Observability::recomputeEmphemeris(StelCore *core, int bodyType)
         tempJd.first  = MoonSet;
         tempJd.second = tempJd.first + core->computeDeltaT(tempJd.first) / 86400.0;
 
-        if (bodyType < 3)
+        if (!isSun(selectedObjects) && !isMoon(selectedObjects))
             getSunMoonCoords(core, tempJd, raSun, decSun, ra, dec, eclLon, false);
         else
             getPlanetCoords(core, tempJd, ra, dec, false);
 
-        if (bodyType == 1) {
+        if (isSun(selectedObjects)) {
             ra  = raSun;
             dec = decSun;
         }
@@ -1938,13 +1947,13 @@ void Observability::recomputeEmphemeris(StelCore *core, int bodyType)
         tempJd.first  = MoonCulm;
         tempJd.second = tempJd.first + core->computeDeltaT(tempJd.first) / 86400.0;
 
-        if (bodyType < 3) {
+        if (!isSun(selectedObjects) && !isMoon(selectedObjects)) {
         getSunMoonCoords(core, tempJd, raSun, decSun, ra, dec, eclLon, false);
         } else {
         getPlanetCoords(core, tempJd, ra, dec, false);
         }
 
-        if (bodyType == 1) {
+        if (isSun(selectedObjects)) {
         ra  = raSun;
         dec = decSun;
         }
