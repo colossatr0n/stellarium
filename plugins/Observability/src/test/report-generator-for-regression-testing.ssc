@@ -57,12 +57,15 @@ core.output(JSON.stringify(reports))
 
 const d = new Date()
 time = d.getTime()
-core.saveOutputAs("observability-report-" + time + ".json")
+const version = core.getApplicationVersion().replaceAll(/\s/g, "_").replaceAll(/(\[|\])/g, "")
+const basename = "observability-report." + version + "." + time + ".json"
+
+core.saveOutputAs(basename)
 if (core.getPlatformName() == "macOS") {
     core.debug("Output was saved to:")
-    core.debug("~/Library/Application\\ Support/Stellarium/observability-report-" + time + ".json")
+    core.debug("~/Library/Application\\ Support/Stellarium/" + basename)
 } else {
     core.debug("Output saved in the  user data directory as:")
-    core.debug("observability-report-" + time + ".json")
+    core.debug(basename)
 }
 

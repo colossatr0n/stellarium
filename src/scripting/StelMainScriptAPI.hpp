@@ -880,6 +880,10 @@ public slots:
 	//! - Unknown
 	static QString getPlatformName(void);
 
+    //! Return the version of stellarium.
+    //! @return the version of stellarium, e.g. "0.19.0"
+    static QString getApplicationVersion(); 
+
 	//! Get the current status of media playback support.
 	//! @return The current status of media playback support.
 	static bool isMediaPlaybackSupported(void);

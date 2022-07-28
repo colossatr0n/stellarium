@@ -1376,6 +1376,11 @@ QString StelMainScriptAPI::getPlatformName(void)
 	return os;
 }
 
+//! Return the version of stellarium, e.g. "0.19.0"
+QString StelMainScriptAPI::getApplicationVersion() {
+    return StelUtils::getApplicationVersion();
+}
+
 // Get the current status of media playback support
 bool StelMainScriptAPI::isMediaPlaybackSupported(void)
 {
