@@ -51,6 +51,487 @@
 #include "ZoneArray.hpp"
 
 
+class ObservableObject {
+public:
+    virtual void computeYearlyEmphemeris() = 0;
+
+
+    virtual void renderResults() {
+        // Set the painter:
+        StelPainter painter(core->getProjection2d());
+        painter.setColor(fontColor[0],fontColor[1],fontColor[2],1.f);
+        font.setPixelSize(fontSize);
+        painter.setFont(font);
+
+    // Print all results:
+        StelProjector::StelProjectorParams params = core->getCurrentStelProjectorParams();
+        float ppx = static_cast<float>(params.devicePixelsPerPixel);
+        int lineSpacing = static_cast<int>(ppx * 1.3f * fontSize);  // between lines
+    //	int groupSpacing = static_cast<int>(6*fontSize*ppx);  // between daily and yearly results
+        int yLine = static_cast<int>(8*fontSize*ppx + 50*ppx);
+        int xLine = 80*ppx;
+
+    //	if (show_Today)
+    //	{
+    //		//renderer->drawText(TextParams(xLine, yLine,q_("TODAY:")));
+    //		painter.drawText(xLine, yLine, msgToday);
+    //		painter.drawText(xLine + fontSize, yLine - lineSpacing, RS2);
+    //		painter.drawText(xLine + fontSize, yLine - lineSpacing*2, RS1);
+    //		painter.drawText(xLine + fontSize, yLine - lineSpacing*3, Cul);
+    //		yLine -= groupSpacing;
+    //	}
+        
+        painter.drawText(xLine, yLine, msgThisYear);
+        if (show_Best_Night || show_FullMoon)
+        {
+            yLine -= lineSpacing;
+            painter.drawText(xLine + fontSize, yLine, lineBestNight);
+        }
+        if (show_Good_Nights)
+        {
+            yLine -= lineSpacing;
+            painter.drawText(xLine + fontSize, yLine, lineObservableRange);
+        }
+        if (show_AcroCos)
+        {
+            yLine -= lineSpacing;
+            painter.drawText(xLine + fontSize, yLine, lineAcro);
+            yLine -= lineSpacing;
+            painter.drawText(xLine + fontSize, yLine, lineCosm);
+            yLine -= lineSpacing;
+            painter.drawText(xLine + fontSize, yLine, lineHeli);
+        }
+    }
+};
+
+class Sun : public ObservableObject{
+public:
+    Sun(){}
+    ~Sun(){}
+    void computeYearlyEmphemeris() override {
+        // noop
+    }
+
+    void computeYearlyObservability() override {
+        lineBestNight.clear();
+        lineObservableRange.clear();
+    }
+
+    void renderResults()  override {
+        // noop
+    }
+};
+
+class Moon : public ObservableObject{
+private:
+    YearlyEphemerisStrategy yearlyEphStrat;
+    RenderResultsStrategy renderResultsStrat;
+
+public:
+    Moon(
+           YearlyEphemerisStrategy yearlyEphStrat,
+           RenderResultsStrategy renderResultsStrat)
+        : yearlyEphStrat(yearlyEphStrat)
+        , renderResultStrat(renderResultsStrat)
+    {}
+
+    ~Moon(){}
+
+    void computeYearlyEmphemeris() override {
+        yearlyEphStrat.compute();
+    }
+
+    void computeYearlyObservability() override {
+        // noop
+    }
+
+    void renderResults()  override {
+        renderResultsStrat.compute();
+    }
+};
+
+
+class Star : public ObservableObject{
+private:
+    YearlyEphemerisStrategy *yearlyEphStrat;
+    YearlyObservabilityStrategy *yearlyObsStrat;
+
+public:
+    Star(YearlyEphemerisStrategy *yearlyEphStrat
+            , YearlyObservabilityStrategy yearlyObsStrat)
+        : yearlyEphStrat(yearlyEphStrat)
+          , yearlyObsStrat(yearlyObsStrat)
+    {}
+
+    ~Star(){}
+
+    void computeYearlyEmphemeris() override {
+       yearlyEphStrat.compute(); 
+    }
+
+    void computeYearlyObservability() override {
+        yearlyObsStrat.compute();
+    }
+
+    // same logic as planet
+    void renderResults()  override {
+        ObservableObject::renderResults();
+    }
+};
+
+class Planet : public ObservableObject{
+public:
+    Planet(){}
+    ~Planet(){}
+
+    // Yearly emphermeris change can be called on all objects when source or year changes.
+    void computeYearlyEmphemeris() override {
+        if (show_Year) {
+            // TODO Make this slot/signal driven. ObservableObject::computeYearlyEphemeris
+            if (souChanged || yearChanged) {
+                updatePlanetData(StelApp::getInstance().getCore()); // Re-compute ephemeris.
+            }
+        }
+    }
+
+    void computeYearlyObservability() override {
+        if yearly
+        // Determine source observability (only if something changed):
+		if ((souChanged || locChanged || yearChanged))
+		{
+            ObservableObject::getYearlyObservability();
+		}// Comes from  "souChanged || ..."
+    }
+
+    // same logic as star
+    void renderResults()  override {
+        ObservableObject::renderResults()
+    }
+};
+
+class ObservableObjectFactory {
+private:
+    MoonStrategyFactory moonStrategyFactory;
+
+public:
+    ObservableObjectFactory(
+            MoonStrategyFactory msf
+    ) : moonStrategyFactory(msf){}
+
+    ~ObservableObjectFactory(){}
+
+    ObservableObject* get(StelObjectP &object) {
+        QString name = object->getEnglishName();
+        bool isMoon = ("Moon" == name);
+        bool isSun = ("Sun" == name);
+
+        Planet* planet = dynamic_cast<Planet*>(object.data());
+        bool isStar = (planet == Q_NULLPTR);
+
+        if (isSun){
+            return new Sun(); 
+        } else if (isMoon){
+            return new Moon(msf.getYearlyEphemerisStrategy());
+        } else if (isStar){
+            return new Moon();
+        } else {
+            return new Planet();
+        }
+    }
+}
+
+//####################
+// Yearly ephem strats
+class YearlyEphemerisStrategy {
+    virtual void compute();
+}
+
+class MoonYearlyEphemerisStrategy : YearlyEphemerisStrategy {
+    void compute() override {
+        calculateSolarSystemEvents(StelApp::getInstance().getCore(), 2);
+    }
+}
+
+class NoopYearlyEphemerisStrategy : YearlyEphemerisStrategy {
+    void compute() override {
+        calculateSolarSystemEvents(StelApp::getInstance().getCore(), 2);
+    }
+}
+
+class NoopYearlyEphemerisStrategy : YearlyEphemerisStrategy {
+    void compute() override {
+        calculateSolarSystemEvents(StelApp::getInstance().getCore(), 2);
+    }
+}
+//##################################3
+// Render strats
+class RenderResultsStrategy {
+    virtual void compute();
+}
+
+class MoonRenderResultsStrategy : RenderResultsStrategy {
+    void compute() override {
+        calculateSolarSystemEvents(StelApp::getInstance().getCore(), 2);
+    }
+}
+
+class StarRenderResultsStrategy : RenderResultsStrategy {
+    void compute() override {
+        calculateSolarSystemEvents(StelApp::getInstance().getCore(), 2);
+    }
+}
+
+class NoopRenderResultsStrategy : RenderResultsStrategy {
+    void compute() override {
+        // noop
+    }
+}
+
+//########################################3
+// YearlyObservabilityStrat
+class YearlyObservabilityStrategy {
+    virtual void compute() 
+    {
+        lineBestNight.clear();
+        lineObservableRange.clear();
+
+        // Check if the target cannot be seen.
+        if (culmAlt >= (halfpi - refractedHorizonAlt))
+        {
+            //ObsRange = q_("Source is not observable.");
+            //AcroCos = q_("No Acronychal nor Cosmical rise/set.");
+            lineObservableRange = msgSrcNotObs;
+            lineAcro = msgNoAcroRise;
+            lineCosm = msgNoCosmRise;
+            lineHeli = msgNoHeliRise;
+        }
+        else
+        { // Source can be seen.
+        ///////////////////////////
+        // - Part 1. Determine the best observing night (i.e., opposition to the Sun):
+            if (show_Best_Night)
+            {
+                int selday = 0;
+                double deltaPhs = -1.0; // Initial dummy value
+                double tempPhs; 	
+                for (int i=0; i<nDays; i++) // Maximize the Sun-object separation.
+                {
+                    tempPhs = Lambda(objectRA[i], objectDec[i],
+                                        sunRA[i], sunDec[i]);
+                    if (tempPhs > deltaPhs)
+                    {
+                        selday = i;
+                        deltaPhs = tempPhs;
+                    }
+                }
+
+                if (selName=="Mercury" || selName=="Venus")
+                {
+                    lineBestNight = msgGreatElong;
+                }
+                else 
+                {
+                    lineBestNight = msgLargSSep;
+                }
+                
+                lineBestNight = lineBestNight
+                                .arg(formatAsDate(selday))
+                                .arg(deltaPhs*Rad2Deg, 0, 'f', 1);
+            }
+
+        ///////////////////////////////
+        // - Part 2. Determine Acronychal and Cosmical rise and set:
+
+            if (show_AcroCos)
+            {
+                int acroRise, acroSet, cosRise, cosSet, heliRise, heliSet;
+
+                int result = calculateAcroCos(acroRise, acroSet,
+                                                cosRise, cosSet);
+                int resultHeli = calculateHeli(0,heliRise,heliSet);
+
+                QString acroRiseStr, acroSetStr;
+                QString cosRiseStr, cosSetStr;
+                QString heliRiseStr, heliSetStr;
+                // TODO: Possible error? Day 0 is 1 Jan. ==> IMV: Indeed! Corrected
+                acroRiseStr = (acroRise>=0)?formatAsDate(acroRise):msgNone;
+                acroSetStr = (acroSet>=0)?formatAsDate(acroSet):msgNone;
+                cosRiseStr = (cosRise>0)?formatAsDate(cosRise):msgNone;
+                cosSetStr = (cosSet>0)?formatAsDate(cosSet):msgNone;
+                heliRiseStr = (heliRise>=0)?formatAsDate(heliRise):msgNone;
+                heliSetStr = (heliSet>=0)?formatAsDate(heliSet):msgNone;
+
+
+                if (result==3 || result==1)
+                    lineAcro =  msgAcroRise.arg(acroRiseStr, acroSetStr);
+                else
+                    lineAcro =  msgNoAcroRise;
+                
+                if (result==3 || result==2)
+                    lineCosm = msgCosmRise.arg(cosRiseStr, cosSetStr);
+                else
+                    lineCosm = msgNoCosmRise;
+
+                if (resultHeli==1)
+                    lineHeli = msgHeliRise.arg(heliRiseStr, heliSetStr);
+                else
+                    lineHeli = msgNoHeliRise;
+            }
+
+        ////////////////////////////
+        // - Part 3. Determine range of good nights 
+        // (i.e., above horizon before/after twilight):
+            if (show_Good_Nights)
+            {
+                int selday = 0;
+                int selday2 = 0;
+                bool bestBegun = false; // Are we inside a good time range?
+                bool atLeastOne = false;
+                QString dateRange;
+                bool poleNight, twiGood;
+
+                for (int i=0; i<nDays; i++)
+                {
+                    poleNight = sunSidT[0][i]<0.0 && qAbs(sunDec[i]-mylat)>=halfpi; // Is it night during 24h?
+                    twiGood = (poleNight && qAbs(objectDec[i]-mylat)<halfpi)?true:CheckRise(i);
+                    
+                    if (twiGood && bestBegun == false)
+                    {
+                        selday = i;
+                        bestBegun = true;
+                        atLeastOne = true;
+                    }
+
+                    if (!twiGood && bestBegun == true)
+                    {
+                        selday2 = i;
+                        bestBegun = false;
+                        if (selday2 > selday)
+                        {
+                            // FIXME: This kind of concatenation is bad for i18n.
+                            if (!dateRange.isEmpty())
+                                dateRange += ", ";
+                            dateRange += QString("%1").arg(formatAsDateRange(selday, selday2));
+                        }
+                    }
+                }
+
+                // Check if there were good dates till the end of the year.
+                if (bestBegun)
+                {
+                    // FIXME: This kind of concatenation is bad for i18n.
+                        if (!dateRange.isEmpty())
+                            dateRange += ", ";
+                    dateRange += formatAsDateRange(selday, 0);
+                }
+                
+                if (dateRange.isEmpty()) 
+                { 
+                    if (atLeastOne) 
+                    {
+                        //ObsRange = q_("Observable during the whole year.");
+                        lineObservableRange = msgWholeYear;
+                    }
+                    else
+                    {
+                        //ObsRange = q_("Not observable at dark night.");
+                        lineObservableRange = msgNotObs;
+                    }
+                }
+                else
+                {
+                    // Nights when the target is above the horizon
+                    lineObservableRange = msgAboveHoriz.arg(dateRange);
+                }
+            } // Comes from show_Good_Nights==True"
+        } // Comes from the "else" of "culmAlt>=..."
+
+    }
+}
+
+class StarYearlyObservabilityStrategy : public YearlyObservabilityStrategy {
+    void compute() override {
+        YearlyObservabilityStrategy::getYearlyObservability();
+    }
+}
+
+class NoopYearlyObservabilityStrategy : public YearlyObservabilityStrategy {
+    void compute() override {
+        // noop
+    }
+}
+
+//########################################3
+// Strat Factory
+class StrategyFactory {
+private:
+    QSettings *settings;
+
+public:
+    StrategyFactory(QSettings *qSettings): settings(qSettings) {}
+
+    virtual YearlyEphemerisStrategy* getYearlyEphemerisStrategy() = 0;
+    virtual RenderResultsStrategy* getRenderResultsStrategy() = 0;
+}
+
+class MoonStrategyFactory : StrategyFactory {
+public:
+    MoonYearlyEphemerisStrategy(QSettings *settings): StrategyFactory(settings){}
+
+    ~MoonYearlyEphemerisStrategy(){}
+
+    YearlyEphemerisStrategy* getYearlyEphemerisStrategy() override {
+        if (settings->value("show_FullMoon", true)) {
+            return new MoonYearlyEphemerisStrategy();
+        } else {
+            return new NoopYearlyEphemerisStrategy();
+        }
+    }
+
+    RenderResultsStrategy* getRenderResultsStrategy() override {
+        if (settings->value("show_FullMoon", true)) {
+            return new MoonRenderResultsStrategy();
+        } else {
+            return new NoopRenderResultsStrategy();
+        }
+    }
+}
+
+class StarStrategyFactory : StrategyFactory {
+private:
+    bool showYear
+
+public:
+    StarYearlyEphemerisStrategy(QSettings *settings): StrategyFactory(settings) {
+        showYear = settings->value("show_Best_Night", true) 
+            || settings->value("show_Good_Nights", true)
+            || settings->value("show_AcroCos", true); 
+    }
+
+    ~StarMoonYearlyEphemerisStrategy(){}
+
+    YearlyEphemerisStrategy* getYearlyEphemerisStrategy() override {
+        // Should this only be used when sou,loc,year changed? Check.
+        if (showYear) {
+            return new StarYearlyEphemerisStrategy();
+        } else {
+            return new NoopYearlyEphemerisStrategy();
+        }
+    }
+
+    YearlyObservabilityStrategy* getYearlyObservabilityStrategy() override {
+        if (showYear) {
+            if ((souChanged || locChanged || yearChanged)) {
+                return new StarYearlyObservabilityStrategy();
+            }
+        } else {
+            return new NoopYearlyObservabilityStrategy();
+        }
+    }
+}
+
+//###############################################
+
 StelModule* ObservabilityStelPluginInterface::getStelModule() const
 {
 	return new Observability();
@@ -242,12 +723,6 @@ void Observability::draw(StelCore* core)
 // Only execute plugin if we are on Earth.
 	if (core->getCurrentLocation().planetName != "Earth")
 		return;
-
-// Set the painter:
-	StelPainter painter(core->getProjection2d());
-	painter.setColor(fontColor[0],fontColor[1],fontColor[2],1.f);
-	font.setPixelSize(fontSize);
-	painter.setFont(font);
 
 // Get current date, location, and check if there is something selected.
 	double currlat = static_cast<double>(core->getCurrentLocation().latitude)/Rad2Deg;
@@ -610,240 +1085,15 @@ void Observability::draw(StelCore* core)
 // Compute yearly ephemeris (only if necessary, and not for Sun):
 
 
-	if (isSun) 
+    // Make this generic and call object.computeYearlyEphemeris
+    ObservableObject *observableObject = new ObservableObjectFactory().get(objectSelection[0]);
+	if (show_Year)
 	{
-		lineBestNight.clear();
-		lineObservableRange.clear();
-	}
-	else if (isMoon)
-	{
-		if (show_FullMoon)
-		{
-			lineObservableRange.clear();
-			lineAcro.clear();
-			lineCosm.clear();
-			lineHeli.clear();
-			calculateSolarSystemEvents(core, 2);
-		}
-	}
-	else if (show_Year)
-	{
-		if (!isStar && (souChanged || yearChanged)) // Object moves.
-			updatePlanetData(core); // Re-compute ephemeris.
-		else
-		{ // Object is fixed on the sky.
-			double auxH = calculateHourAngle(mylat,refractedHorizonAlt,selDec);
-			double auxSidT1 = toUnsignedRA(selRA - auxH); 
-			double auxSidT2 = toUnsignedRA(selRA + auxH); 
-			for (int i=0;i<nDays;i++) {
-				objectH0[i] = auxH;
-				objectRA[i] = selRA;
-				objectDec[i] = selDec;
-				objectSidT[0][i] = auxSidT1;
-				objectSidT[1][i] = auxSidT2;
-			}
-		}
+        observableObject->computeYearlyEmphemeris();
+        observableObject->computeYearlyObservability();
+	} 
 
-// Determine source observability (only if something changed):
-		if ((souChanged || locChanged || yearChanged))
-		{
-			lineBestNight.clear();
-			lineObservableRange.clear();
-
-			// Check if the target cannot be seen.
-			if (culmAlt >= (halfpi - refractedHorizonAlt))
-			{
-				//ObsRange = q_("Source is not observable.");
-				//AcroCos = q_("No Acronychal nor Cosmical rise/set.");
-				lineObservableRange = msgSrcNotObs;
-				lineAcro = msgNoAcroRise;
-				lineCosm = msgNoCosmRise;
-				lineHeli = msgNoHeliRise;
-			}
-			else
-			{ // Source can be seen.
-///////////////////////////
-// - Part 1. Determine the best observing night (i.e., opposition to the Sun):
-				if (show_Best_Night)
-				{
-					int selday = 0;
-					double deltaPhs = -1.0; // Initial dummy value
-					double tempPhs; 	
-					for (int i=0; i<nDays; i++) // Maximize the Sun-object separation.
-					{
-						tempPhs = Lambda(objectRA[i], objectDec[i],
-						                 sunRA[i], sunDec[i]);
-						if (tempPhs > deltaPhs)
-						{
-							selday = i;
-							deltaPhs = tempPhs;
-						}
-					}
-
-					if (selName=="Mercury" || selName=="Venus")
-					{
-						lineBestNight = msgGreatElong;
-					}
-					else 
-					{
-						lineBestNight = msgLargSSep;
-					}
-					
-					lineBestNight = lineBestNight
-					                .arg(formatAsDate(selday))
-					                .arg(deltaPhs*Rad2Deg, 0, 'f', 1);
-				}
-
-///////////////////////////////
-// - Part 2. Determine Acronychal and Cosmical rise and set:
-
-				if (show_AcroCos)
-				{
-					int acroRise, acroSet, cosRise, cosSet, heliRise, heliSet;
-
-					int result = calculateAcroCos(acroRise, acroSet,
-					                              cosRise, cosSet);
-					int resultHeli = calculateHeli(0,heliRise,heliSet);
-
-					QString acroRiseStr, acroSetStr;
-					QString cosRiseStr, cosSetStr;
-					QString heliRiseStr, heliSetStr;
-					// TODO: Possible error? Day 0 is 1 Jan. ==> IMV: Indeed! Corrected
-					acroRiseStr = (acroRise>=0)?formatAsDate(acroRise):msgNone;
-					acroSetStr = (acroSet>=0)?formatAsDate(acroSet):msgNone;
-					cosRiseStr = (cosRise>0)?formatAsDate(cosRise):msgNone;
-					cosSetStr = (cosSet>0)?formatAsDate(cosSet):msgNone;
-					heliRiseStr = (heliRise>=0)?formatAsDate(heliRise):msgNone;
-					heliSetStr = (heliSet>=0)?formatAsDate(heliSet):msgNone;
-
-
-					if (result==3 || result==1)
-						lineAcro =  msgAcroRise.arg(acroRiseStr, acroSetStr);
-					else
-						lineAcro =  msgNoAcroRise;
-					
-					if (result==3 || result==2)
-						lineCosm = msgCosmRise.arg(cosRiseStr, cosSetStr);
-					else
-						lineCosm = msgNoCosmRise;
-
-					if (resultHeli==1)
-						lineHeli = msgHeliRise.arg(heliRiseStr, heliSetStr);
-					else
-						lineHeli = msgNoHeliRise;
-				}
-
-////////////////////////////
-// - Part 3. Determine range of good nights 
-// (i.e., above horizon before/after twilight):
-				if (show_Good_Nights)
-				{
-					int selday = 0;
-					int selday2 = 0;
-					bool bestBegun = false; // Are we inside a good time range?
-					bool atLeastOne = false;
-					QString dateRange;
-					bool poleNight, twiGood;
-
-					for (int i=0; i<nDays; i++)
-					{
-						poleNight = sunSidT[0][i]<0.0 && qAbs(sunDec[i]-mylat)>=halfpi; // Is it night during 24h?
-						twiGood = (poleNight && qAbs(objectDec[i]-mylat)<halfpi)?true:CheckRise(i);
-						
-						if (twiGood && bestBegun == false)
-						{
-							selday = i;
-							bestBegun = true;
-							atLeastOne = true;
-						}
-
-						if (!twiGood && bestBegun == true)
-						{
-							selday2 = i;
-							bestBegun = false;
-							if (selday2 > selday)
-							{
-								// FIXME: This kind of concatenation is bad for i18n.
-								if (!dateRange.isEmpty())
-									dateRange += ", ";
-								dateRange += QString("%1").arg(formatAsDateRange(selday, selday2));
-							}
-						}
-					}
-
-					// Check if there were good dates till the end of the year.
-					if (bestBegun)
-					{
-						// FIXME: This kind of concatenation is bad for i18n.
-						 if (!dateRange.isEmpty())
-							 dateRange += ", ";
-						dateRange += formatAsDateRange(selday, 0);
-					}
-					
-					if (dateRange.isEmpty()) 
-					{ 
-						if (atLeastOne) 
-						{
-							//ObsRange = q_("Observable during the whole year.");
-							lineObservableRange = msgWholeYear;
-						}
-						else
-						{
-							//ObsRange = q_("Not observable at dark night.");
-							lineObservableRange = msgNotObs;
-						}
-					}
-					else
-					{
-						// Nights when the target is above the horizon
-						lineObservableRange = msgAboveHoriz.arg(dateRange);
-					}
-				} // Comes from show_Good_Nights==True"
-			} // Comes from the "else" of "culmAlt>=..."
-		}// Comes from  "souChanged || ..."
-	} // Comes from the "else" with "!isMoon"
-
-// Print all results:
-	StelProjector::StelProjectorParams params = core->getCurrentStelProjectorParams();
-	float ppx = static_cast<float>(params.devicePixelsPerPixel);
-	int lineSpacing = static_cast<int>(ppx * 1.3f * fontSize);  // between lines
-//	int groupSpacing = static_cast<int>(6*fontSize*ppx);  // between daily and yearly results
-	int yLine = static_cast<int>(8*fontSize*ppx + 50*ppx);
-	int xLine = 80*ppx;
-
-//	if (show_Today)
-//	{
-//		//renderer->drawText(TextParams(xLine, yLine,q_("TODAY:")));
-//		painter.drawText(xLine, yLine, msgToday);
-//		painter.drawText(xLine + fontSize, yLine - lineSpacing, RS2);
-//		painter.drawText(xLine + fontSize, yLine - lineSpacing*2, RS1);
-//		painter.drawText(xLine + fontSize, yLine - lineSpacing*3, Cul);
-//		yLine -= groupSpacing;
-//	}
-	
-	if ((isMoon && show_FullMoon) || (!isSun && !isMoon && show_Year)) 
-	{
-		painter.drawText(xLine, yLine, msgThisYear);
-		if (show_Best_Night || show_FullMoon)
-		{
-			yLine -= lineSpacing;
-			painter.drawText(xLine + fontSize, yLine, lineBestNight);
-		}
-		if (show_Good_Nights)
-		{
-			yLine -= lineSpacing;
-			painter.drawText(xLine + fontSize, yLine, lineObservableRange);
-		}
-		if (show_AcroCos)
-		{
-			yLine -= lineSpacing;
-			painter.drawText(xLine + fontSize, yLine, lineAcro);
-			yLine -= lineSpacing;
-			painter.drawText(xLine + fontSize, yLine, lineCosm);
-			yLine -= lineSpacing;
-			painter.drawText(xLine + fontSize, yLine, lineHeli);
-		}
-	}
+    renderResults();
 }
 
 // END OF MAIN CODE
@@ -1525,6 +1775,11 @@ bool Observability::calculateSolarSystemEvents(StelCore* core, int bodyType)
 // Find out the days of Full Moon:
 	if (bodyType==2 && show_FullMoon) // || show_SuperMoon))
 	{
+        lineObservableRange.clear();
+        lineAcro.clear();
+        lineCosm.clear();
+        lineHeli.clear();
+
 	// Only estimate date of Full Moon if we have changed Lunar month:
 		if (myJD.first > nextFullMoon || myJD.first < prevFullMoon)
 		{
@@ -1874,3 +2129,4 @@ QString Observability::getReportAsJson() {
     report += QString("}");
     return report;
 }
+
